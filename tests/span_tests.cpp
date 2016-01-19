@@ -1674,6 +1674,18 @@ SUITE(span_tests)
             }
         }
     }
+
+    TEST(issue241)
+    {
+        int a[1][3] = {{0, 1, 2}};
+        auto s = as_span(a); // bounds are 1 and 3
+        span<int, 3, dynamic_range> s2 = s; // bounds are 3 and 3
+
+        CHECK(s.extent<0>() == 1);
+        CHECK(s.extent<1>() == 3);
+        CHECK(s2.extent<0>() == 3);
+        CHECK(s2.extent<1>() == 1);
+    }
 }
 
 int main(int, const char* []) { return UnitTest::RunAllTests(); }
