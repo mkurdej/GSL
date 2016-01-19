@@ -102,22 +102,7 @@ span<T, dynamic_range> ensure_sentinel(T* seq, std::ptrdiff_t max = PTRDIFF_MAX)
 
 namespace detail
 {
-    template <typename T>
-    struct string_length;
-
-    template <>
-    struct string_length<char>
-    {
-        static inline auto apply(const char* const& sz, size_t max) { return strnlen(sz, max); }
-    };
-
-    template <>
-    struct string_length<wchar_t>
-    {
-        static inline auto apply(const wchar_t* const& sz, size_t max) { return wcsnlen(sz, max); }
-    };
-
-    template <typename T, bool IsChar>
+    template <typename T, typename BaseT>
     struct ensure_z_impl
     {
         static inline span<T, dynamic_range> apply(T* const& sz, std::ptrdiff_t max)
@@ -127,12 +112,22 @@ namespace detail
     };
 
     template <typename T>
-    struct ensure_z_impl<T, true>
+    struct ensure_z_impl<T, char>
     {
         static inline span<T, dynamic_range> apply(T* const& sz, std::ptrdiff_t max)
         {
-            using CharT = std::remove_cv_t<T>;
-            auto len = string_length<CharT>::apply(sz, narrow_cast<size_t>(max));
+            auto len = strnlen(sz, narrow_cast<size_t>(max));
+            Ensures(sz[len] == 0);
+            return {sz, static_cast<std::ptrdiff_t>(len)};
+        }
+    };
+
+    template <typename T>
+    struct ensure_z_impl<T, wchar_t>
+    {
+        static inline span<T, dynamic_range> apply(T* const& sz, std::ptrdiff_t max)
+        {
+            auto len = wcsnlen(sz, narrow_cast<size_t>(max));
             Ensures(sz[len] == 0);
             return {sz, static_cast<std::ptrdiff_t>(len)};
         }
@@ -147,11 +142,11 @@ namespace detail
 template <typename T>
 inline auto ensure_z(T* const& sz, std::ptrdiff_t max = PTRDIFF_MAX)
 {
-    using non_cv_type = std::remove_cv_t<std::decay_t<T>>;
-    constexpr bool is_char = std::is_same<char, non_cv_type>::value;
-    constexpr bool is_wchar_t = std::is_same<wchar_t, non_cv_type>::value;
-    return detail::ensure_z_impl<T, (is_char || is_wchar_t)>::apply(sz, max);
+    return detail::ensure_z_impl<T, std::remove_cv_t<T>>::apply(sz, max);
 }
+
+template<typename T, size_t N>
+span<T, dynamic_range> ensure_z(T(&sz)[N]) { return ensure_z(&sz[0], static_cast<std::ptrdiff_t>(N)); }
 
 template<class Cont>
 span<typename std::remove_pointer<typename Cont::pointer>::type, dynamic_range> ensure_z(Cont& cont)
