@@ -100,49 +100,58 @@ span<T, dynamic_range> ensure_sentinel(T* seq, std::ptrdiff_t max = PTRDIFF_MAX)
     return{ seq, cur - seq };
 }
 
+namespace detail
+{
+    template <typename T>
+    struct string_length;
+
+    template <>
+    struct string_length<char>
+    {
+        static inline auto apply(const char* const& sz, size_t max) { return strnlen(sz, max); }
+    };
+
+    template <>
+    struct string_length<wchar_t>
+    {
+        static inline auto apply(const wchar_t* const& sz, size_t max) { return wcsnlen(sz, max); }
+    };
+
+    template <typename T, bool IsChar>
+    struct ensure_z_impl
+    {
+        static inline span<T, dynamic_range> apply(T* const& sz, std::ptrdiff_t max)
+        {
+            return ensure_sentinel<T, 0>(sz, max);
+        }
+    };
+
+    template <typename T>
+    struct ensure_z_impl<T, true>
+    {
+        static inline span<T, dynamic_range> apply(T* const& sz, std::ptrdiff_t max)
+        {
+            using CharT = std::remove_cv_t<T>;
+            auto len = string_length<CharT>::apply(sz, narrow_cast<size_t>(max));
+            Ensures(sz[len] == 0);
+            return {sz, static_cast<std::ptrdiff_t>(len)};
+        }
+    };
+} // namespace detail
 
 //
 // ensure_z - creates a span for a czstring or cwzstring.
 // Will fail fast if a null-terminator cannot be found before
 // the limit of size_type.
 //
-template<typename T>
-inline span<T, dynamic_range> ensure_z(T* const & sz, std::ptrdiff_t max = PTRDIFF_MAX)
+template <typename T>
+inline auto ensure_z(T* const& sz, std::ptrdiff_t max = PTRDIFF_MAX)
 {
-    return ensure_sentinel<T, 0>(sz, max);
+    using non_cv_type = std::remove_cv_t<std::decay_t<T>>;
+    constexpr bool is_char = std::is_same<char, non_cv_type>::value;
+    constexpr bool is_wchar_t = std::is_same<wchar_t, non_cv_type>::value;
+    return detail::ensure_z_impl<T, (is_char || is_wchar_t)>::apply(sz, max);
 }
-
-// TODO (neilmac) there is probably a better template-magic way to get the const and non-const overloads to share an implementation
-inline span<char, dynamic_range> ensure_z(char* const& sz, std::ptrdiff_t max)
-{
-    auto len = strnlen(sz, narrow_cast<size_t>(max));
-    Ensures(sz[len] == 0);
-    return{ sz, static_cast<std::ptrdiff_t>(len) };
-}
-
-inline span<const char, dynamic_range> ensure_z(const char* const& sz, std::ptrdiff_t max)
-{
-    auto len = strnlen(sz, narrow_cast<size_t>(max));
-    Ensures(sz[len] == 0);
-    return{ sz, static_cast<std::ptrdiff_t>(len) };
-}
-
-inline span<wchar_t, dynamic_range> ensure_z(wchar_t* const& sz, std::ptrdiff_t max)
-{
-    auto len = wcsnlen(sz, narrow_cast<size_t>(max));
-    Ensures(sz[len] == 0);
-    return{ sz, static_cast<std::ptrdiff_t>(len) };
-}
-
-inline span<const wchar_t, dynamic_range> ensure_z(const wchar_t* const& sz, std::ptrdiff_t max)
-{
-    auto len = wcsnlen(sz, narrow_cast<size_t>(max));
-    Ensures(sz[len] == 0);
-    return{ sz, static_cast<std::ptrdiff_t>(len) };
-}
-
-template<typename T, size_t N>
-span<T, dynamic_range> ensure_z(T(&sz)[N]) { return ensure_z(&sz[0], static_cast<std::ptrdiff_t>(N)); }
 
 template<class Cont>
 span<typename std::remove_pointer<typename Cont::pointer>::type, dynamic_range> ensure_z(Cont& cont)
@@ -327,7 +336,7 @@ public:
     constexpr basic_string_span(span<value_type, Extent> other) noexcept
         : span_(other)
     {}
-        
+
     template <typename Dummy = std::enable_if_t<!std::is_same<std::remove_const_t<value_type>, value_type>::value>>
     constexpr basic_string_span(span<std::remove_const_t<value_type>, Extent> other) noexcept
         : span_(other)
@@ -589,7 +598,7 @@ bool operator==(const T& one, gsl::basic_string_span<CharT, Extent> other) noexc
 #endif
 }
 
-#ifndef _MSC_VER 
+#ifndef _MSC_VER
 
 // VS treats temp and const containers as convertible to basic_string_span,
 // so the cases below are already covered by the previous operators
@@ -643,7 +652,7 @@ bool operator!=(const T& one, gsl::basic_string_span<CharT, Extent> other) noexc
     return !(one == other);
 }
 
-#ifndef _MSC_VER 
+#ifndef _MSC_VER
 
 // VS treats temp and const containers as convertible to basic_string_span,
 // so the cases below are already covered by the previous operators
@@ -697,7 +706,7 @@ bool operator<(const T& one, gsl::basic_string_span<CharT, Extent> other) noexce
     return std::lexicographical_compare(tmp.begin(), tmp.end(), other.begin(), other.end());
 }
 
-#ifndef _MSC_VER 
+#ifndef _MSC_VER
 
 // VS treats temp and const containers as convertible to basic_string_span,
 // so the cases below are already covered by the previous operators
@@ -751,7 +760,7 @@ bool operator<=(const T& one, gsl::basic_string_span<CharT, Extent> other) noexc
     return !(other < one);
 }
 
-#ifndef _MSC_VER 
+#ifndef _MSC_VER
 
 // VS treats temp and const containers as convertible to basic_string_span,
 // so the cases below are already covered by the previous operators
@@ -803,7 +812,7 @@ bool operator>(const T& one, gsl::basic_string_span<CharT, Extent> other) noexce
     return other < one;
 }
 
-#ifndef _MSC_VER 
+#ifndef _MSC_VER
 
 // VS treats temp and const containers as convertible to basic_string_span,
 // so the cases below are already covered by the previous operators
@@ -855,7 +864,7 @@ bool operator>=(const T& one, gsl::basic_string_span<CharT, Extent> other) noexc
     return !(one < other);
 }
 
-#ifndef _MSC_VER 
+#ifndef _MSC_VER
 
 // VS treats temp and const containers as convertible to basic_string_span,
 // so the cases below are already covered by the previous operators
